@@ -1,0 +1,234 @@
+# Curve Fitting and Least Squares in MATLAB
+
+Two MATLAB programs from **ENGR 128 (Lab 06)** at Purdue University Fort Wayne:
+
+1. **Function discovery:** decide whether real engineering data follows a linear, exponential, or power-law relationship, then fit and plot the best model.
+2. **Linear least squares from scratch:** a custom function that fits a line to thermistor data and reports the coefficient of determination (R²), without using `polyfit`.
+
+**Tools:** MATLAB, `polyfit`, `linspace`, `subplot`, `semilogy`, `loglog`, user-defined functions
+
+---
+
+## Activity 1: Function Discovery
+
+### The idea
+
+Three different datasets, three different relationships. The trick is that each model type becomes a straight line on a specific kind of plot:
+
+| Model | Equation | Looks straight on |
+|---|---|---|
+| Linear | `y = mx + b` | Linear axes |
+| Exponential | `y = b * 10^(mx)` | Semilog (log y-axis) |
+| Power | `y = b * x^m` | Log-log |
+
+For each dataset, the script plots the data on all three axis types side by side, so the best model can be chosen by which plot looks like a straight line. It then fits that model and overlays it on the original data.
+
+### Datasets and results
+
+| Dataset | Model chosen | Fit |
+|---|---|---|
+| LEGO flowmeter (Flow vs. Read) | Linear | Closely follows the data across the whole range |
+| Wind power (Power vs. Wind speed) | Power law | Good at low to mid speeds; overpredicts above about 8 mph |
+| Bearing life (Life vs. Temperature) | Exponential | Nearly passes through every data point |
+
+<!-- Add your screenshots here: the three-panel plot and the final fit plot for each dataset -->
+
+![Flowmeter plots](images/flowmeter-comparison.png)
+![Flowmeter fit](images/flowmeter-fit.png)
+![Wind power plots](images/wind-comparison.png)
+![Wind power fit](images/wind-fit.png)
+![Bearing life plots](images/bearing-comparison.png)
+![Bearing life fit](images/bearing-fit.png)
+
+### How the fitting works
+
+`polyfit` only fits straight lines, so the exponential and power models are first **linearized** by taking logarithms, then converted back:
+
+- **Linear:** `p = polyfit(Read, Flow, 1)`, giving `y = p(1)*x + p(2)`.
+- **Power:** taking log10 of both sides of `y = b*x^m` gives `log10(y) = m*log10(x) + log10(b)`. Fitting a line to `log10(Wind)` and `log10(Power)` gives the slope `m` and intercept `log10(b)`, so `b = 10^p(2)`.
+- **Exponential:** taking log10 of `y = b*10^(mx)` gives `log10(y) = m*x + log10(b)`. Fitting `Temp` against `log10(Life)` gives `m` and `b = 10^p(2)`.
+
+`linspace` then builds 100 evenly spaced x values so the fitted curve plots smoothly.
+
+### Limitations
+
+The wind power data levels off at higher speeds, while a power-law curve keeps climbing, so the fit drifts above the data at the top end. A more realistic wind turbine model would flatten out there. The model choice here is also made by eye. A natural next step would be to compute R² for each candidate model and choose by number.
+
+### Code
+
+```matlab
+clear; clc; close all;
+load('emp3.mat')
+
+%% Dataset 1: Flow vs Read
+figure
+subplot(1,3,1); plot(Read,Flow,'o'); title('Linear')
+subplot(1,3,2); semilogy(Read,Flow,'o'); title('Semilog')
+subplot(1,3,3); loglog(Read,Flow,'o'); title('Log-Log')
+sgtitle('LEGO Flowmeter')
+
+p = polyfit(Read,Flow,1);
+x = linspace(min(Read),max(Read),100);
+y = p(1)*x + p(2);
+
+figure
+plot(Read,Flow,'o',x,y,'-')
+grid on
+xlabel('Read'); ylabel('Flow')
+title('Flow vs Read')
+legend('Data','Best Fit')
+
+%% Dataset 2: Power vs Wind
+figure
+subplot(1,3,1); plot(Wind,Power,'o'); title('Linear')
+subplot(1,3,2); semilogy(Wind,Power,'o'); title('Semilog')
+subplot(1,3,3); loglog(Wind,Power,'o'); title('Log-Log')
+sgtitle('Wind Power')
+
+p = polyfit(log10(Wind),log10(Power),1);
+m = p(1);
+b = 10^p(2);
+
+x = linspace(min(Wind),max(Wind),100);
+y = b*x.^m;
+
+figure
+plot(Wind,Power,'o',x,y,'-')
+grid on
+xlabel('Wind Speed (MPH)'); ylabel('Power (MW)')
+title('Wind Power')
+legend('Data','Best Fit')
+
+%% Dataset 3: Life vs Temp
+figure
+subplot(1,3,1); plot(Temp,Life,'o'); title('Linear')
+subplot(1,3,2); semilogy(Temp,Life,'o'); title('Semilog')
+subplot(1,3,3); loglog(Temp,Life,'o'); title('Log-Log')
+sgtitle('Bearing Life')
+
+p = polyfit(Temp,log10(Life),1);
+m = p(1);
+b = 10^p(2);
+
+x = linspace(min(Temp),max(Temp),100);
+y = b*10.^(m*x);
+
+figure
+plot(Temp,Life,'o',x,y,'-')
+grid on
+xlabel('Temperature'); ylabel('Life')
+title('Bearing Life')
+legend('Data','Best Fit')
+```
+
+---
+
+## Activity 2: Least Squares Function
+
+### The idea
+
+Instead of calling `polyfit`, I wrote my own function, `leastSquares(x, y)`, that fits a line `y = mx + b` using the least-squares formulas, calculates R², and plots the result. I tested it on thermistor data: resistance (ohms) measured at temperatures from 25 to 70 °C.
+
+### The math
+
+For `n` data points:
+
+```
+m = (n * sum(x*y) - sum(x) * sum(y)) / (n * sum(x^2) - (sum(x))^2)
+b = mean(y) - m * mean(x)
+R^2 = 1 - sum((y - yhat)^2) / sum((y - mean(y))^2)
+```
+
+where `yhat = m*x + b` is the line's predicted value at each point. R² measures how much of the variation in the data the line explains. A value of 1 means a perfect fit.
+
+### Results
+
+```
+Z =
+   1.0e+03 *
+    6.8988   -0.0926
+
+R2 =
+    0.9697
+```
+
+`Z = [b m]`, so the fit is **R = 6898.8 - 92.6 T**: resistance drops about 92.6 ohms for every degree Celsius. An R² of 0.9697 means the line explains about 97% of the variation in the data.
+
+I checked these numbers independently in Python and got the same slope, intercept, and R².
+
+<!-- Add your screenshot of the thermistor plot here -->
+
+![Thermistor linear fit](images/thermistor-fit.png)
+
+### Code design notes
+
+- `x = x(:); y = y(:);` forces both inputs to be column vectors, so the function works whether the user passes row or column data.
+- An `if` check with `error(...)` stops the function if `x` and `y` have different lengths, which would otherwise cause a confusing failure later.
+- The function returns the coefficients and R², and also draws the plot, so one call does the whole analysis.
+
+### Limitations
+
+The thermistor points curve slightly around the fitted line: the line sits below the data at the cool end, above it in the middle, and below again at the hot end. That pattern is typical of an NTC thermistor, whose resistance follows an exponential relationship with temperature. Linear is a reasonable approximation over this range (R² = 0.97), but fitting `ln(R)` against `T`, as in Activity 1, would likely fit better.
+
+### Code
+
+```matlab
+clear; clc; close all;
+
+temp = [25 30 35 40 45 50 55 60 65 70];
+ohms = [5000 4200 3600 3000 2500 2000 1600 1300 1000 800];
+
+[Z,R2] = leastSquares(temp,ohms);
+
+disp('Z =')
+disp(Z)
+disp('R2 =')
+disp(R2)
+
+%% Function
+function [Z,R2] = leastSquares(x,y)
+
+x = x(:);
+y = y(:);
+
+if length(x) ~= length(y)
+    error('x and y must be the same length')
+end
+
+n = length(x);
+
+m = (n*sum(x.*y)-sum(x)*sum(y)) / ...
+    (n*sum(x.^2)-(sum(x))^2);
+
+b = mean(y)-m*mean(x);
+
+yhat = m*x+b;
+
+R2 = 1-sum((y-yhat).^2)/sum((y-mean(y)).^2);
+
+Z = [b m];
+
+xfit = linspace(min(x),max(x),100);
+yfit = m*xfit+b;
+
+figure
+plot(x,y,'o',xfit,yfit,'-')
+grid on
+xlabel('Temperature (C)')
+ylabel('Resistance (Ohms)')
+title('Thermistor Linear Fit')
+legend('Data','Best Fit')
+
+end
+```
+
+---
+
+## What I learned
+
+- Taking logarithms turns exponential and power relationships into straight lines, so one tool (a line fit) handles all three model types.
+- Plotting the same data on linear, semilog, and log-log axes is a fast way to identify the right model.
+- Writing least squares by hand made it clear what `polyfit` is doing underneath.
+- A high R² does not mean the model is right. Looking at the plot caught patterns (the wind power plateau, the thermistor curvature) that a single number hides.
+
+*ENGR 128, Lab 06, Purdue University Fort Wayne*
